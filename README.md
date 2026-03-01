@@ -86,7 +86,8 @@ node server.js
 ### Start the server
 
 ```bash
-node server.js
+npm start        # Runs unit tests first, then starts the server (recommended)
+npm run dev      # Starts the server directly, skipping tests
 ```
 
 The server listens on `http://127.0.0.1:3000`.
@@ -152,8 +153,12 @@ open-adapter/
 ├── adapter.js              # Standalone CLI tool (single-prompt, exits after)
 ├── lib/
 │   ├── sessionManager.js   # Browser lifecycle & multi-tier session recovery
+│   ├── extractPayload.js   # OpenAI message parser & file attachment handler
 │   ├── htmlToMd.js         # HTML-to-Markdown converter (runs in-browser)
 │   └── rateLimiter.js      # Detects Claude rate limits from DOM & response text
+├── tests/
+│   ├── unit/               # Unit tests (extractPayload, htmlToMd, rateLimiter)
+│   └── integration/        # Integration tests (HTTP endpoint validation)
 ├── .browser-profile/       # Persistent Chromium session (created on first run)
 ├── temp_uploads/           # Temporary directory for file attachments
 ├── logs.txt                # Request/response logs (created at runtime)
@@ -241,6 +246,18 @@ fileInput:      input[type="file"]
 ```
 
 To inspect current selectors, open `claude.ai` in Chrome DevTools (F12) and inspect the elements.
+
+## Testing
+
+```bash
+npm test              # Run all tests (unit + integration)
+npm run test:unit     # Unit tests only (no server needed)
+npm run test:integration  # Integration tests (requires running server)
+```
+
+Unit tests cover the core modules (`extractPayload`, `htmlToMd`, `rateLimiter`) and run automatically before the server starts when using `npm start`.
+
+Integration tests validate the HTTP endpoint (request validation, CORS, response shape) against a live server.
 
 ## Limitations
 
