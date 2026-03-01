@@ -1,0 +1,7 @@
+node_modules/
+.browser-profile/
+temp_uploads/
+logs.txt
+.env
+.DS_Store
+*.log

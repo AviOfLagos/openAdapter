@@ -1,0 +1,26 @@
+{
+  "name": "open-adapter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "npm run test:unit && node server.js",
+    "dev": "node server.js",
+    "test": "node --test tests/**/*.test.js",
+    "test:unit": "node --test tests/unit/**/*.test.js",
+    "test:integration": "node --test tests/integration/**/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mime-types": "^3.0.2",
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
+    "jsdom": "^28.1.0"
+  }
+}
