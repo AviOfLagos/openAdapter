@@ -10,9 +10,9 @@ Thanks for your interest in contributing! This guide will help you understand th
    npm install
    npx playwright install chromium
    ```
-3. Start the server:
+3. Start the server (runs tests first, then starts):
    ```bash
-   node server.js
+   npm start
    ```
 4. On first run, a Chromium window opens — log into `claude.ai` manually. Your session persists in `.browser-profile/`.
 5. Test with:
@@ -30,8 +30,12 @@ open-adapter/
 ├── adapter.js              # Standalone CLI tool (single prompt, exits)
 ├── lib/
 │   ├── sessionManager.js   # Browser lifecycle & multi-tier recovery
+│   ├── extractPayload.js   # OpenAI message parser & file attachment handler
 │   ├── htmlToMd.js         # HTML-to-Markdown converter (runs in-browser)
 │   └── rateLimiter.js      # Detects Claude rate limits from DOM & text
+├── tests/
+│   ├── unit/               # Unit tests (extractPayload, htmlToMd, rateLimiter)
+│   └── integration/        # Integration tests (HTTP endpoint validation)
 ├── .browser-profile/       # Persistent Chromium session (gitignored)
 ├── temp_uploads/           # Temporary file attachments (auto-cleaned)
 └── logs.txt                # Request/response logs (runtime)
@@ -126,12 +130,17 @@ The server returns OpenAI-compatible responses. If you're adding new fields or e
 
 ## Testing
 
-There is no automated test suite yet (this is a good area for contribution). To test manually:
+```bash
+npm run test:unit           # Unit tests only (no server needed)
+npm run test:integration    # Integration tests (requires running server)
+npm test                    # All tests
+```
+
+Unit tests cover `extractPayload`, `htmlToMd`, and `rateLimiter` modules using Node's built-in test runner (`node:test`). Integration tests validate the HTTP endpoint against a live server.
+
+To test manually:
 
 ```bash
-# Start the server
-node server.js
-
 # Non-streaming request
 curl http://127.0.0.1:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -150,16 +159,15 @@ Check `logs.txt` for detailed request/response logs.
 
 ## Areas for Contribution
 
-Here are concrete improvements that would be valuable:
+Check the [GitHub Issues](https://github.com/AviOfLagos/openAdapter/issues) for current tasks. Here are high-impact areas:
 
+- **Tool calling support** — the biggest gap; needed for OpenClaw skills, subagents, cron jobs, and MCP
 - **Selector updates** — keep selectors current when Claude's UI changes
-- **Automated tests** — mock the Playwright page and test `extractPayload()`, `htmlToMarkdown()`, rate limit detection, etc.
 - **Better streaming** — replace DOM polling with MutationObserver or CDP event listeners for lower latency
-- **Headless mode** — find workarounds for Cloudflare's headless detection
-- **Multi-tab concurrency** — manage multiple browser tabs to handle parallel requests
 - **Conversation continuity** — maintain multi-turn conversations across API requests instead of starting fresh
 - **Config file** — move hardcoded values (port, timeouts, selectors) to a `.env` or config file
 - **Docker support** — containerize with Xvfb for running on servers without a display
+- **More tests** — browser-mocked tests for session recovery, DOM interaction, and streaming
 
 ## Style Guidelines
 

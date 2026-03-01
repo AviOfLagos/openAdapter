@@ -5,3 +5,4 @@ logs.txt
 .env
 .DS_Store
 *.log
+docs/
