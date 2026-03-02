@@ -1,8 +1,41 @@
-# OpenAdapter
+# OpenAdapter - Claude.ai to OpenAI API Bridge for OpenClaw
 
-A local server that bridges Claude's web interface (`claude.ai`) into an **OpenAI-compatible API** using Playwright. Send requests to `http://127.0.0.1:3000/v1/chat/completions` and get responses back — no API key required. It uses your existing browser login session.
+> **Self-hosted OpenAI-compatible API for Claude.ai** using Playwright automation. Perfect for [OpenClaw](https://github.com/openclaw/openclaw), custom AI assistants, and any tool expecting OpenAI's API format.
 
-Built to work with any tool that speaks the OpenAI chat completions format (e.g. [OpenClaw](https://github.com/nicholasgriffintn/openclaw), custom scripts, IDE plugins, etc.).
+**🦞 Built with OpenClaw in mind** — Use Claude's intelligence without API costs!
+
+**No API key required** • **Free & Open Source** • **Streaming Support** • **File Uploads**
+
+A local server that bridges Claude's web interface (`claude.ai`) into an **OpenAI-compatible REST API**. Send requests to `http://127.0.0.1:3000/v1/chat/completions` and get responses back using your existing browser login session.
+
+Works with [OpenClaw](https://github.com/openclaw/openclaw), custom scripts, IDE plugins, and any tool that speaks the OpenAI chat completions format.
+
+## 🦞 OpenClaw Integration
+
+**Perfect for [OpenClaw](https://github.com/openclaw/openclaw) users!** Use Claude's intelligence with all your OpenClaw skills and automations - no API costs required.
+
+### Quick Setup for OpenClaw
+
+```yaml
+# In your OpenClaw config:
+llm:
+  provider: openai
+  api_base: "http://127.0.0.1:3000/v1"
+  api_key: "dummy-key-not-used"
+  model: "claude-sonnet-4.5"
+  streaming: true
+```
+
+**📖 [Complete OpenClaw Integration Guide](docs/OPENCLAW_INTEGRATION.md)**
+
+### Works With Any OpenAI-Compatible Tool
+
+- **[OpenClaw](https://github.com/openclaw/openclaw)** - Personal AI assistant with 100+ skills
+- **[Continue.dev](https://continue.dev)** - AI code assistant for VS Code
+- **Custom scripts** - Python, JavaScript, shell scripts
+- **IDE plugins** - Cursor and other OpenAI-compatible tools
+
+*Using OpenAdapter in your project? [Open a PR](https://github.com/AviOfLagos/openAdapter/pulls) to add it here!*
 
 ## How It Works
 
@@ -286,7 +319,23 @@ Integration tests validate the HTTP endpoint (request validation, CORS, response
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide — architecture walkthrough, request flow, how to update selectors, style guidelines, and areas where help is welcome.
+We welcome contributions! OpenAdapter is built with the OpenClaw community in mind. 🦞
+
+### Good First Issues
+Check out issues labeled [`good first issue`](https://github.com/AviOfLagos/openAdapter/labels/good%20first%20issue) - these are perfect for newcomers!
+
+### Priority Features
+- **🎯 Tool Calling Support (v1.2)** - #1 requested feature for OpenClaw integration
+- Docker support
+- Better streaming (MutationObserver)
+- Configuration file
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide and [roadmap](docs/roadmap-milestones.md) for planned features.
+
+### Community
+- 💬 [Discussions](https://github.com/AviOfLagos/openAdapter/discussions) - Ask questions, share workflows
+- 🐛 [Issues](https://github.com/AviOfLagos/openAdapter/issues) - Bug reports and feature requests
+- 🦞 [OpenClaw Integration](https://github.com/AviOfLagos/openAdapter/discussions/categories/openclaw-integration) - OpenClaw-specific help
 
 ## License
 

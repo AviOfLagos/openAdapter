@@ -9,13 +9,25 @@ OpenAdapter is a local Express server that bridges claude.ai's web interface int
 ## Commands
 
 ```bash
+# Setup
 npm install                        # Install dependencies
 npx playwright install chromium    # Install Playwright's bundled Chromium
-node server.js                     # Start the API server on port 3000
-node adapter.js "your prompt"      # CLI: single prompt, exits after response
+
+# Running the server
+npm start                          # Run unit tests first, then start server (recommended)
+npm run dev                        # Start server directly, skipping tests
+node server.js                     # Alternative to npm run dev
+
+# Testing (uses Node's built-in test runner)
+npm test                           # Run all tests (unit + integration)
+npm run test:unit                  # Unit tests only (no server needed)
+npm run test:integration           # Integration tests (requires running server)
+
+# CLI tool
+node adapter.js "your prompt"      # Single prompt, exits after response
 ```
 
-No test framework is configured. No linter is configured.
+No linter is configured.
 
 ## Architecture
 
@@ -34,6 +46,14 @@ No test framework is configured. No linter is configured.
 
 **Browser profile:** `.browser-profile/` stores persistent Chromium session data so the user only logs in once. This directory is gitignored.
 
+**Configuration values** (hardcoded in source files):
+- `PORT`: 3000 (server listen port)
+- `MAX_TIMEOUT_MS`: 180000ms (3 min) in server.js, 120000ms (2 min) in adapter.js — hard timeout waiting for Claude's response
+- `STABLE_INTERVAL_MS`: 30000ms (30 sec) in server.js, 3000ms (3 sec) in adapter.js — content-unchanged threshold to consider response complete
+- `POLL_MS`: 500ms — DOM polling interval
+- `SESSION_TIMEOUT_MS`: 3600000ms (1 hr) — inactivity before starting a new conversation
+- Large prompt threshold: 15000 chars — prompts exceeding this are converted to file attachments
+
 ## Important Constraints
 
 - The browser **must run headful** (Cloudflare blocks headless Chromium)
@@ -41,3 +61,22 @@ No test framework is configured. No linter is configured.
 - System context is deduplicated across requests using MD5 hashing stored in `sessionState.lastSystemContextHash`
 - HTTP server timeouts are set to 10 minutes (600s) to support long Claude generations
 - Token counts in responses are estimates (char length / 4), not real tokenization
+
+## Testing
+
+The project uses Node's built-in test runner (`node:test`). Tests are in `tests/`:
+- **Unit tests** (`tests/unit/`): Test `extractPayload`, `htmlToMd`, and `rateLimiter` modules in isolation. No server needed.
+- **Integration tests** (`tests/integration/`): Validate the HTTP endpoint against a live server. Requires the server to be running.
+
+`npm start` runs unit tests before starting the server. Unit tests are fast and catch regressions in core modules.
+
+## Coding Standards
+
+When modifying code, follow these conventions:
+
+- **Logging**: Use `appendLog()` in server code (writes to both console and `logs.txt`). Prefix log lines with `[moduleName]` for traceability (e.g., `[server]`, `[sessionManager]`)
+- **Async**: Use `async/await` over raw promises
+- **Variables**: Use `const`/`let`, never `var`
+- **Selectors**: Add new selectors to `SELECTOR_CHAINS` objects rather than hardcoding them inline. Update both `server.js` and `adapter.js` if both need the same selector
+- **Error responses**: Return OpenAI-shaped error objects with appropriate HTTP status codes (see `CONTRIBUTING.md` for format)
+- **Functions**: Keep functions focused. If adding significant logic, put it in a new file under `lib/`
