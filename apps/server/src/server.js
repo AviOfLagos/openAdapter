@@ -8,6 +8,18 @@ const { htmlToMarkdown } = require('./lib/htmlToMd');
 const { checkRateLimit, sendRateLimitResponse } = require('./lib/rateLimiter');
 const { state: sessionState, isPageAlive, recoverSession, getOrInitPage } = require('./lib/sessionManager');
 const { createExtractPayload } = require('./lib/extractPayload');
+const {
+    stats: requestStats,
+    trackRequest,
+    getHealth,
+    getStatus,
+    restartSession,
+    triggerRecovery,
+    forceNewChat,
+    getLogs,
+    clearLogs,
+    getConfig,
+} = require('./lib/managementController');
 
 const app = express();
 // Increase parsing limits for base64 images/files
@@ -15,7 +27,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(cors());
 
 // --- Payload Logging Middleware ---
-const LOG_FILE = path.join(__dirname, "logs.txt");
+const LOG_FILE = path.join(__dirname, "..", "logs.txt");
 function appendLog(str) {
     console.log(str);
     try { fs.appendFileSync(LOG_FILE, str + "\n"); } catch (e) { }
@@ -39,11 +51,11 @@ app.use((req, res, next) => {
     next();
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3001;
 const MAX_TIMEOUT_MS = 180_000;
 const STABLE_INTERVAL_MS = 30000;
 const POLL_MS = 500;
-const TEMP_DIR = path.join(__dirname, 'temp_uploads');
+const TEMP_DIR = path.join(__dirname, '..', 'temp_uploads');
 const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
 // Ensure temp dir exists
@@ -55,6 +67,44 @@ if (!fs.existsSync(TEMP_DIR)) {
 let isGenerating = false;
 
 const extractPayload = createExtractPayload({ sessionState, tempDir: TEMP_DIR, appendLog });
+
+// ──────────────────────────────────────────────────────────────────
+// Management API Authentication (optional)
+// ──────────────────────────────────────────────────────────────────
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || null;
+
+function adminAuth(req, res, next) {
+    // If no API key is set, allow all requests (for local use)
+    if (!ADMIN_API_KEY) {
+        return next();
+    }
+
+    const authHeader = req.headers.authorization;
+    const providedKey = authHeader?.replace(/^Bearer\s+/i, '');
+
+    if (providedKey === ADMIN_API_KEY) {
+        return next();
+    }
+
+    res.status(401).json({
+        error: {
+            message: 'Unauthorized - invalid or missing API key',
+            type: 'authentication_error',
+        },
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Management API Endpoints
+// ──────────────────────────────────────────────────────────────────
+app.get('/admin/health', adminAuth, (req, res) => getHealth(req, res));
+app.get('/admin/status', adminAuth, (req, res) => getStatus(req, res));
+app.post('/admin/session/restart', adminAuth, (req, res) => restartSession(req, res, appendLog));
+app.post('/admin/session/recover', adminAuth, (req, res) => triggerRecovery(req, res, appendLog));
+app.post('/admin/session/new-chat', adminAuth, (req, res) => forceNewChat(req, res, appendLog));
+app.get('/admin/logs', adminAuth, (req, res) => getLogs(req, res));
+app.delete('/admin/logs', adminAuth, (req, res) => clearLogs(req, res, appendLog));
+app.get('/admin/config', adminAuth, (req, res) => getConfig(req, res));
 
 // ──────────────────────────────────────────────────────────────────
 // Selector chains  (used throughout for robust element finding)
@@ -300,11 +350,13 @@ app.post('/v1/chat/completions', async (req, res) => {
         if (rateLimitResult) {
             // Clean up temp files
             for (const file of filesToUpload) { try { fs.unlinkSync(file); } catch { } }
+            trackRequest(false, true);
             sendRateLimitResponse(res, rateLimitResult.message, rateLimitResult.retryAfterMs);
             return;
         }
 
         appendLog(`[server] Success (${responseText.length} chars)`);
+        trackRequest(true, false);
 
         // Cleanup temp files
         for (const file of filesToUpload) {
@@ -347,6 +399,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         }
     } catch (err) {
         console.error(`[server] Error:`, err);
+        trackRequest(false, false);
         res.status(500).json({ error: { message: `Gateway error: ${err.message}`, type: 'server_error' } });
     } finally {
         isGenerating = false;

@@ -25,6 +25,10 @@ npm run test:integration           # Integration tests (requires running server)
 
 # CLI tool
 node adapter.js "your prompt"      # Single prompt, exits after response
+
+# Remote management (optional API key auth via ADMIN_API_KEY env var)
+curl http://127.0.0.1:3000/admin/health           # Health check
+curl -X POST http://127.0.0.1:3000/admin/session/restart  # Restart browser
 ```
 
 No linter is configured.
@@ -34,11 +38,12 @@ No linter is configured.
 **Request flow:** Client sends OpenAI-format POST → `server.js` extracts prompt/files via `extractPayload()` → gets or recovers a Playwright page via `sessionManager.getOrInitPage()` → types prompt into Claude's contenteditable input → polls DOM for response via `waitForCompletion()` → converts HTML to Markdown via `htmlToMd.htmlToMarkdown()` (runs in-browser via `page.evaluate()`) → checks for rate limits via `rateLimiter.checkRateLimit()` → returns OpenAI-shaped JSON or SSE stream.
 
 **Key modules:**
-- `server.js` — Express server, single endpoint, handles streaming/non-streaming, file uploads (base64 → temp file → Playwright file input), system context deduplication (MD5 hash), large prompt conversion to file attachments (>15k chars)
+- `server.js` — Express server, chat completions endpoint + management API, handles streaming/non-streaming, file uploads (base64 → temp file → Playwright file input), system context deduplication (MD5 hash), large prompt conversion to file attachments (>15k chars)
 - `adapter.js` — Standalone CLI tool with its own browser lifecycle. Duplicates selector chains and DOM helpers from server.js (not shared)
 - `lib/sessionManager.js` — Browser lifecycle with multi-tier recovery (L0: JS eval probe → L1: reload → L2: navigate to /new → L3: full browser restart → L4: fatal/503). Exports shared mutable `state` object
 - `lib/htmlToMd.js` — Self-contained DOM→Markdown converter. **Must remain free of Node.js globals** because it's serialized and executed inside the browser via `page.evaluate()`
 - `lib/rateLimiter.js` — Regex-based rate limit detection from DOM elements and response text, returns OpenAI-format 429 responses
+- `lib/managementController.js` — Remote management API (health checks, session control, log access, stats tracking). Optional authentication via `ADMIN_API_KEY` environment variable
 
 **Selector chains:** Both `server.js` and `adapter.js` define `SELECTOR_CHAINS` objects with fallback CSS selectors for Claude's UI elements (promptInput, sendButton, stopButton, responseBlocks, fileInput). These break when Claude updates their DOM and need manual inspection to fix.
 

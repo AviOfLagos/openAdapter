@@ -4,7 +4,7 @@ const {
     parseRetryAfter,
     checkTextForRateLimit,
     sendRateLimitResponse,
-} = require('../../lib/rateLimiter');
+} = require('../../src/lib/rateLimiter');
 
 describe('parseRetryAfter', () => {
     it('returns 60000 default when no match', () => {

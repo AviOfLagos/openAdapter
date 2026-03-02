@@ -1,26 +1,29 @@
 {
-  "name": "open-adapter",
+  "name": "openadapter-monorepo",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "description": "OpenAdapter monorepo - Claude.ai to OpenAI API Bridge with AI-powered dashboard",
   "scripts": {
-    "start": "npm run test:unit && node server.js",
-    "dev": "node server.js",
-    "test": "node --test tests/**/*.test.js",
-    "test:unit": "node --test tests/unit/**/*.test.js",
-    "test:integration": "node --test tests/integration/**/*.test.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "mime-types": "^3.0.2",
-    "playwright": "^1.58.2"
+    "dev": "turbo run dev --parallel",
+    "dev:server": "turbo run dev --filter=@openadapter/server",
+    "dev:dashboard": "turbo run dev --filter=@openadapter/dashboard",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "type-check": "turbo run type-check",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
-    "jsdom": "^24.0.0"
-  }
+    "prettier": "^3.1.1",
+    "turbo": "^2.0.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@9.12.3"
 }

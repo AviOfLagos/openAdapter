@@ -178,6 +178,54 @@ Output goes to stdout. Status messages go to stderr, so you can pipe cleanly:
 node adapter.js "List 5 prime numbers" | grep -i prime
 ```
 
+## Remote Management API
+
+OpenAdapter includes a comprehensive remote management API for monitoring and controlling the server:
+
+### Quick Examples
+
+```bash
+# Check server health
+curl http://127.0.0.1:3000/admin/health
+
+# Restart browser session
+curl -X POST http://127.0.0.1:3000/admin/session/restart
+
+# View recent logs
+curl http://127.0.0.1:3000/admin/logs?lines=50
+```
+
+### Available Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/health` | GET | Comprehensive health & statistics |
+| `/admin/status` | GET | Simple status check (healthy/degraded) |
+| `/admin/session/restart` | POST | Force browser restart |
+| `/admin/session/recover` | POST | Trigger multi-tier session recovery |
+| `/admin/session/new-chat` | POST | Start new conversation |
+| `/admin/logs` | GET | Retrieve recent logs |
+| `/admin/logs` | DELETE | Clear log file |
+| `/admin/config` | GET | View configuration |
+
+### Security (Optional)
+
+Enable API key authentication for remote access:
+
+```bash
+# Generate secure key
+export ADMIN_API_KEY="$(openssl rand -hex 32)"
+
+# Start server with authentication
+npm start
+
+# Use with requests
+curl -H "Authorization: Bearer your-key-here" \
+  http://127.0.0.1:3000/admin/health
+```
+
+**📖 [Complete Remote Management Guide](REMOTE_MANAGEMENT.md)**
+
 ## Project Structure
 
 ```

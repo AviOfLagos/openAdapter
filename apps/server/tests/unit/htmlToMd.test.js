@@ -1,7 +1,7 @@
 const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { JSDOM } = require('jsdom');
-const { htmlToMarkdown } = require('../../lib/htmlToMd');
+const { htmlToMarkdown } = require('../../src/lib/htmlToMd');
 
 let document;
 

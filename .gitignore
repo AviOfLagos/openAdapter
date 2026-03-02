@@ -1,9 +1,30 @@
+# Dependencies
 node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# OpenAdapter specific
 .browser-profile/
 temp_uploads/
+apps/server/temp_uploads/
 logs.txt
-.env
+apps/server/logs.txt
+
+# OS files
 .DS_Store
 *.log
+
+# Docs (generated)
 docs/
+
 # Note: .github/ directory IS tracked (contains workflows and templates)

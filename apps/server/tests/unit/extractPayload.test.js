@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createExtractPayload } = require('../../lib/extractPayload');
+const { createExtractPayload } = require('../../src/lib/extractPayload');
 
 let extractPayload, tempDir, sessionState;
 
