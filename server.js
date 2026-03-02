@@ -8,6 +8,7 @@ const { htmlToMarkdown } = require('./lib/htmlToMd');
 const { checkRateLimit, sendRateLimitResponse } = require('./lib/rateLimiter');
 const { state: sessionState, isPageAlive, recoverSession, getOrInitPage } = require('./lib/sessionManager');
 const { createExtractPayload } = require('./lib/extractPayload');
+const { buildToolCallingPrompt, parseToolCalls, formatToolCallResponse, formatToolCallStreamChunks } = require('./lib/toolCallParser');
 
 const app = express();
 // Increase parsing limits for base64 images/files
@@ -182,7 +183,8 @@ app.post('/v1/chat/completions', async (req, res) => {
         return res.status(429).json({ error: { message: 'Adapter is busy with another request. Please wait.', type: 'rate_limit_error' } });
     }
 
-    const { messages } = req.body;
+    const { messages, tools } = req.body;
+    const hasTools = Array.isArray(tools) && tools.length > 0;
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: { message: 'Invalid request', type: 'invalid_request_error' } });
@@ -193,7 +195,15 @@ app.post('/v1/chat/completions', async (req, res) => {
         return res.status(400).json({ error: { message: 'Empty prompt', type: 'invalid_request_error' } });
     }
 
-    const { textPrompt, filesToUpload } = payload;
+    let { textPrompt, filesToUpload } = payload;
+
+    // If tools are present, augment the prompt with tool definitions and format instructions
+    if (hasTools) {
+        const toolPrompt = buildToolCallingPrompt(tools, messages);
+        textPrompt = toolPrompt + '\n\n--- User message ---\n' + textPrompt;
+        appendLog(`[server] Tool calling enabled (${tools.length} tools). Augmented prompt.`);
+    }
+
     appendLog(`[server] Processing prompt (${textPrompt.length} chars) with ${filesToUpload.length} attachments`);
 
     isGenerating = true;
@@ -264,8 +274,13 @@ app.post('/v1/chat/completions', async (req, res) => {
         const replyFingerprint = "fp_" + crypto.randomBytes(6).toString('hex');
         const replyCreated = Math.floor(Date.now() / 1000);
 
+        // When tools are present, buffer the full response (don't stream chunks)
+        // so we can parse <tool_call> blocks from the complete text.
+        // When no tools, stream normally as before.
+        const shouldStreamChunks = req.body.stream && !hasTools;
+
         if (req.body.stream) {
-            console.log("[server] Streaming response via SSE using real-time listener...");
+            console.log("[server] Streaming response via SSE...");
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
@@ -274,9 +289,9 @@ app.post('/v1/chat/completions', async (req, res) => {
         let fullGeneratedText = "";
 
         // Wait for completion and handle real-time chunking
-        console.log("[server] Waiting for response and streaming...");
+        console.log("[server] Waiting for response...");
         fullGeneratedText = await waitForCompletion(page, prevCount, (chunkText) => {
-            if (req.body.stream) {
+            if (shouldStreamChunks) {
                 const streamChunk = {
                     id: replyId,
                     object: "chat.completion.chunk",
@@ -298,7 +313,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         // ── Rate limit check ───────────────────────────────────────────────
         const rateLimitResult = await checkRateLimit(page, responseText);
         if (rateLimitResult) {
-            // Clean up temp files
             for (const file of filesToUpload) { try { fs.unlinkSync(file); } catch { } }
             sendRateLimitResponse(res, rateLimitResult.message, rateLimitResult.retryAfterMs);
             return;
@@ -311,14 +325,59 @@ app.post('/v1/chat/completions', async (req, res) => {
             try { fs.unlinkSync(file); } catch (e) { }
         }
 
+        const promptTokens = Math.max(1, Math.floor(textPrompt.length / 4));
+        const completionTokens = Math.max(1, Math.floor(responseText.length / 4));
+
+        // ── Check for tool calls in response ─────────────────────────────
+        if (hasTools) {
+            const { toolCalls, textContent } = parseToolCalls(responseText, tools);
+
+            if (toolCalls.length > 0) {
+                appendLog(`[server] Parsed ${toolCalls.length} tool call(s) from response.`);
+                const params = {
+                    toolCalls, textContent, replyId, replyCreated, replyFingerprint,
+                    promptTokens, completionTokens,
+                };
+
+                if (req.body.stream) {
+                    const chunks = formatToolCallStreamChunks(params);
+                    for (const chunk of chunks) {
+                        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                    }
+                    res.write(`data: [DONE]\n\n`);
+                    res.end();
+                    appendLog(`\n=== [OUTGOING STREAM TOOL_CALLS RESPONSE SENT] ===\n`);
+                } else {
+                    const response = formatToolCallResponse(params);
+                    res.json(response);
+                    appendLog(`\n=== [OUTGOING TOOL_CALLS RESPONSE] ===\n${JSON.stringify(response, null, 2)}\n===========================\n`);
+                }
+                return;
+            }
+            // No tool calls found — fall through to normal text response
+            appendLog('[server] Tools were available but Claude responded with plain text.');
+        }
+
+        // ── Normal text response ─────────────────────────────────────────
         const baseTokenCount = {
-            prompt_tokens: Math.max(1, Math.floor(textPrompt.length / 4)),
-            completion_tokens: Math.max(1, Math.floor(responseText.length / 4)),
-            total_tokens: Math.max(2, Math.floor((textPrompt.length + responseText.length) / 4))
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
         };
 
         if (req.body.stream) {
-            // Send the finish chunk
+            // If tools were present (buffered mode), send the text content now
+            if (hasTools) {
+                const textChunk = {
+                    id: replyId,
+                    object: "chat.completion.chunk",
+                    created: replyCreated,
+                    model: "claude-3-5-sonnet",
+                    system_fingerprint: replyFingerprint,
+                    choices: [{ index: 0, delta: { role: "assistant", content: responseText.trim() }, logprobs: null, finish_reason: null }]
+                };
+                res.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+            }
             const finishChunk = {
                 id: replyId,
                 object: "chat.completion.chunk",
