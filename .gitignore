@@ -6,4 +6,4 @@ logs.txt
 .DS_Store
 *.log
 docs/
-.github/
+# Note: .github/ directory IS tracked (contains workflows and templates)

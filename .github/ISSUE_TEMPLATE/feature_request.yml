@@ -1,0 +1,62 @@
+name: Feature Request
+description: Suggest an idea for OpenAdapter
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! We especially welcome ideas that improve OpenClaw integration.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear description of what the problem is
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      description: What do you want to happen?
+      placeholder: A clear description of what you want to happen
+    validations:
+      required: true
+
+  - type: dropdown
+    id: openclaw-related
+    attributes:
+      label: Is this related to OpenClaw integration?
+      options:
+        - "Yes - OpenClaw specific"
+        - "No - General feature"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Describe alternatives you've considered
+      description: Any alternative solutions or features you've thought about
+
+  - type: dropdown
+    id: willing-to-contribute
+    attributes:
+      label: Would you be willing to contribute this feature?
+      options:
+        - "Yes, I'd like to work on this"
+        - "Maybe, with guidance"
+        - "No, but I can test"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add any other context, screenshots, or examples about the feature request

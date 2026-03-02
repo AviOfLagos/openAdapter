@@ -1,0 +1,47 @@
+# Auto-labeling configuration for PRs
+# Labels are applied based on which files are changed
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.md'
+      - 'docs/**/*'
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'tests/**/*'
+      - '**/*.test.js'
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'package.json'
+      - 'package-lock.json'
+
+lib:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'lib/**/*'
+
+server:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'server.js'
+
+cli:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'adapter.js'
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/**/*'
+
+docker:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - '.dockerignore'

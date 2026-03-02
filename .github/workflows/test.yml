@@ -1,0 +1,100 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run unit tests
+      run: npm run test:unit
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: unit-test-results-node-${{ matrix.node-version }}
+        path: |
+          logs.txt
+          test-results/
+
+  lint:
+    name: Lint Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    # Note: No linter is currently configured
+    # Uncomment when eslint is added:
+    # - name: Run ESLint
+    #   run: npm run lint
+
+    - name: Check code formatting (placeholder)
+      run: echo "No linter configured yet - see issue #XX"
+
+  # Integration tests require a running browser and Claude login
+  # These are skipped in CI but documented for manual testing
+  integration-tests:
+    name: Integration Tests (Manual)
+    runs-on: ubuntu-latest
+    if: false  # Disabled by default - enable when Docker support is added
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Install Playwright
+      run: npx playwright install chromium
+
+    - name: Install Playwright system dependencies
+      run: npx playwright install-deps chromium
+
+    # Note: Integration tests require manual Claude login
+    # Cannot be automated in CI until we have a test mode
+    - name: Note about integration tests
+      run: |
+        echo "Integration tests require manual Claude login"
+        echo "Run locally with: npm run test:integration"
+        echo "See docs/TESTING.md for details"

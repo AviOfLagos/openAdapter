@@ -1,0 +1,71 @@
+name: OpenClaw Integration Help
+description: Get help setting up or using OpenAdapter with OpenClaw
+title: "[OpenClaw]: "
+labels: ["openclaw", "question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        🦞 Need help with OpenClaw integration? You're in the right place!
+
+        **Quick links:**
+        - [OpenClaw Integration Guide](../docs/OPENCLAW_INTEGRATION.md)
+        - [OpenClaw Discussions](../../discussions)
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you need help with?
+      description: Describe your question or issue with OpenClaw integration
+      placeholder: "I'm trying to configure OpenClaw to use OpenAdapter but..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: setup-stage
+    attributes:
+      label: What stage are you at?
+      options:
+        - "Installing OpenAdapter"
+        - "Configuring OpenClaw"
+        - "First request/testing"
+        - "Advanced configuration"
+        - "Troubleshooting errors"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: openclaw-config
+    attributes:
+      label: Your OpenClaw configuration (redact sensitive info)
+      description: Share relevant parts of your OpenClaw config
+      render: yaml
+      placeholder: |
+        llm:
+          provider: openai
+          api_base: "http://127.0.0.1:3000/v1"
+          model: "claude-sonnet-4.5"
+
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Error message (if any)
+      description: Copy the full error message
+      render: shell
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: OpenAdapter is running (`npm run dev`)
+        - label: I can curl the endpoint successfully
+        - label: OpenClaw config has `api_base` ending in `/v1`
+        - label: I've checked the integration guide
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might help us help you
