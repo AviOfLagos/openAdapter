@@ -2,6 +2,12 @@
 node_modules/
 **/node_modules/
 
+# Lockfiles (only root pnpm-lock.yaml is tracked)
+package-lock.json
+yarn.lock
+apps/*/pnpm-lock.yaml
+packages/*/pnpm-lock.yaml
+
 # Build outputs
 dist/
 .next/

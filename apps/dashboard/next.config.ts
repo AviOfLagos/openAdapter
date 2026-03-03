@@ -3,6 +3,11 @@ import { withBotId } from "botid/next/config";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  experimental: {
+    turbo: {
+      root: "../../",
+    },
+  },
   images: {
     remotePatterns: [
       {
