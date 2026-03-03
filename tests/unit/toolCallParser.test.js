@@ -1,7 +1,9 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
+    buildToolDefinitionsFile,
     buildToolCallingPrompt,
+    buildToolCallingReminder,
     buildToolHistory,
     parseToolCalls,
     formatToolCallResponse,
@@ -16,7 +18,7 @@ const SAMPLE_TOOLS = [
             description: 'Execute a shell command',
             parameters: {
                 type: 'object',
-                properties: { command: { type: 'string' } },
+                properties: { command: { type: 'string', description: 'The command to run' } },
                 required: ['command'],
             },
         },
@@ -28,7 +30,10 @@ const SAMPLE_TOOLS = [
             description: 'Read a file from disk',
             parameters: {
                 type: 'object',
-                properties: { path: { type: 'string' } },
+                properties: {
+                    path: { type: 'string', description: 'File path' },
+                    offset: { type: 'number', description: 'Start line' },
+                },
                 required: ['path'],
             },
         },
@@ -36,29 +41,86 @@ const SAMPLE_TOOLS = [
 ];
 
 // ──────────────────────────────────────────────────────────────────
-// buildToolCallingPrompt
+// buildToolDefinitionsFile
+// ──────────────────────────────────────────────────────────────────
+describe('buildToolDefinitionsFile', () => {
+    it('includes action names as headings', () => {
+        const content = buildToolDefinitionsFile(SAMPLE_TOOLS);
+        assert.ok(content.includes('### exec'));
+        assert.ok(content.includes('### read_file'));
+    });
+
+    it('includes descriptions', () => {
+        const content = buildToolDefinitionsFile(SAMPLE_TOOLS);
+        assert.ok(content.includes('Execute a shell command'));
+        assert.ok(content.includes('Read a file from disk'));
+    });
+
+    it('uses human-readable parameter format instead of raw JSON', () => {
+        const content = buildToolDefinitionsFile(SAMPLE_TOOLS);
+        assert.ok(content.includes('Required: command (string)'));
+        assert.ok(content.includes('Required: path (string)'));
+        assert.ok(content.includes('Optional: offset (number)'));
+        // Should NOT contain raw JSON schema
+        assert.ok(!content.includes('"type":"object"'));
+    });
+
+    it('includes output protocol with <tool_call> format', () => {
+        const content = buildToolDefinitionsFile(SAMPLE_TOOLS);
+        assert.ok(content.includes('<tool_call>'));
+        assert.ok(content.includes('</tool_call>'));
+        assert.ok(content.includes('Output Protocol'));
+    });
+
+    it('includes few-shot examples', () => {
+        const content = buildToolDefinitionsFile(SAMPLE_TOOLS);
+        assert.ok(content.includes('## Examples'));
+        assert.ok(content.includes('capital of France'));
+    });
+
+    it('frames as workspace configuration, not tool injection', () => {
+        const content = buildToolDefinitionsFile(SAMPLE_TOOLS);
+        assert.ok(content.includes('Workspace Action Definitions'));
+        assert.ok(content.includes('software pipeline'));
+        // Should NOT use imperative "You have access to" framing
+        assert.ok(!content.includes('You have access to the following tools'));
+    });
+
+    it('handles tools with enum parameters', () => {
+        const tools = [{
+            type: 'function',
+            function: {
+                name: 'browser',
+                description: 'Control browser',
+                parameters: {
+                    type: 'object',
+                    properties: { action: { type: 'string', enum: ['click', 'type', 'navigate'] } },
+                    required: ['action'],
+                },
+            },
+        }];
+        const content = buildToolDefinitionsFile(tools);
+        assert.ok(content.includes('[click|type|navigate]'));
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// buildToolCallingPrompt (first upload — references attachment)
 // ──────────────────────────────────────────────────────────────────
 describe('buildToolCallingPrompt', () => {
-    it('includes tool names and descriptions', () => {
+    it('references the attached workspace definitions', () => {
         const prompt = buildToolCallingPrompt(SAMPLE_TOOLS, []);
-        assert.ok(prompt.includes('Tool: exec'));
-        assert.ok(prompt.includes('Execute a shell command'));
-        assert.ok(prompt.includes('Tool: read_file'));
+        assert.ok(prompt.includes('attached'));
+        assert.ok(prompt.includes('workspace action definitions'));
     });
 
-    it('includes format instructions with <tool_call> tags', () => {
+    it('does NOT include full tool definitions inline', () => {
         const prompt = buildToolCallingPrompt(SAMPLE_TOOLS, []);
-        assert.ok(prompt.includes('<tool_call>'));
-        assert.ok(prompt.includes('</tool_call>'));
+        assert.ok(!prompt.includes('Execute a shell command'));
+        assert.ok(!prompt.includes('Parameters:'));
     });
 
-    it('includes tool parameters as JSON', () => {
-        const prompt = buildToolCallingPrompt(SAMPLE_TOOLS, []);
-        assert.ok(prompt.includes('"command"'));
-        assert.ok(prompt.includes('"path"'));
-    });
-
-    it('includes tool history when assistant had tool_calls', () => {
+    it('includes tool history when present', () => {
         const messages = [
             { role: 'user', content: 'list files' },
             {
@@ -72,15 +134,49 @@ describe('buildToolCallingPrompt', () => {
             { role: 'tool', tool_call_id: 'call_abc', content: 'file1.txt\nfile2.txt' },
         ];
         const prompt = buildToolCallingPrompt(SAMPLE_TOOLS, messages);
-        assert.ok(prompt.includes('You called tool "exec"'));
+        assert.ok(prompt.includes('exec'));
         assert.ok(prompt.includes('file1.txt'));
     });
 
-    it('returns prompt without history section when no tool messages', () => {
+    it('returns clean prompt without history when no tool messages', () => {
         const prompt = buildToolCallingPrompt(SAMPLE_TOOLS, [
             { role: 'user', content: 'hello' },
         ]);
-        assert.ok(!prompt.includes('Previous tool interactions'));
+        assert.ok(!prompt.includes('Previous actions'));
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// buildToolCallingReminder (follow-up — names only)
+// ──────────────────────────────────────────────────────────────────
+describe('buildToolCallingReminder', () => {
+    it('lists tool names', () => {
+        const reminder = buildToolCallingReminder(SAMPLE_TOOLS, []);
+        assert.ok(reminder.includes('exec'));
+        assert.ok(reminder.includes('read_file'));
+    });
+
+    it('mentions <tool_call> format', () => {
+        const reminder = buildToolCallingReminder(SAMPLE_TOOLS, []);
+        assert.ok(reminder.includes('<tool_call>'));
+    });
+
+    it('does NOT include full descriptions or parameters', () => {
+        const reminder = buildToolCallingReminder(SAMPLE_TOOLS, []);
+        assert.ok(!reminder.includes('Execute a shell command'));
+        assert.ok(!reminder.includes('Parameters'));
+    });
+
+    it('includes tool history when present', () => {
+        const messages = [{
+            role: 'assistant',
+            tool_calls: [{
+                function: { name: 'exec', arguments: '{"command":"pwd"}' },
+            }],
+        }];
+        const reminder = buildToolCallingReminder(SAMPLE_TOOLS, messages);
+        assert.ok(reminder.includes('exec'));
+        assert.ok(reminder.includes('pwd'));
     });
 });
 
@@ -92,14 +188,14 @@ describe('buildToolHistory', () => {
         assert.equal(buildToolHistory([{ role: 'user', content: 'hi' }]), null);
     });
 
-    it('formats assistant tool_calls', () => {
+    it('formats assistant tool_calls as Action lines', () => {
         const result = buildToolHistory([{
             role: 'assistant',
             tool_calls: [{
                 function: { name: 'exec', arguments: '{"command":"pwd"}' },
             }],
         }]);
-        assert.ok(result.includes('You called tool "exec"'));
+        assert.ok(result.includes('Action: exec('));
         assert.ok(result.includes('pwd'));
     });
 
@@ -109,8 +205,18 @@ describe('buildToolHistory', () => {
             tool_call_id: 'call_123',
             content: '/home/user',
         }]);
-        assert.ok(result.includes('Tool result (call_123)'));
-        assert.ok(result.includes('/home/user'));
+        assert.ok(result.includes('Result: /home/user'));
+    });
+
+    it('truncates long tool results', () => {
+        const longContent = 'x'.repeat(600);
+        const result = buildToolHistory([{
+            role: 'tool',
+            tool_call_id: 'call_123',
+            content: longContent,
+        }]);
+        assert.ok(result.includes('...'));
+        assert.ok(result.length < longContent.length);
     });
 });
 

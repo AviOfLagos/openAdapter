@@ -6,9 +6,9 @@ const crypto = require('crypto');
 
 const { htmlToMarkdown } = require('./lib/htmlToMd');
 const { checkRateLimit, sendRateLimitResponse } = require('./lib/rateLimiter');
-const { state: sessionState, isPageAlive, recoverSession, getOrInitPage } = require('./lib/sessionManager');
+const { state: sessionState, isPageAlive, recoverSession, getOrInitPage, CLAUDE_PROJECT_URL } = require('./lib/sessionManager');
 const { createExtractPayload } = require('./lib/extractPayload');
-const { buildToolCallingPrompt, parseToolCalls, formatToolCallResponse, formatToolCallStreamChunks } = require('./lib/toolCallParser');
+const { buildToolDefinitionsFile, buildToolCallingPrompt, buildToolCallingReminder, buildToolHistory, parseToolCalls, formatToolCallResponse, formatToolCallStreamChunks } = require('./lib/toolCallParser');
 
 const app = express();
 // Increase parsing limits for base64 images/files
@@ -197,11 +197,45 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     let { textPrompt, filesToUpload } = payload;
 
-    // If tools are present, augment the prompt with tool definitions and format instructions
+    // Tool calling: when a Claude Project is configured, tool definitions live
+    // as persistent files in the project — no uploading or inline prefixes needed.
+    // Without a project, fall back to uploading tool definitions as a file attachment.
     if (hasTools) {
-        const toolPrompt = buildToolCallingPrompt(tools, messages);
-        textPrompt = toolPrompt + '\n\n--- User message ---\n' + textPrompt;
-        appendLog(`[server] Tool calling enabled (${tools.length} tools). Augmented prompt.`);
+        if (CLAUDE_PROJECT_URL) {
+            // Project mode: files are already in the project. Only replay tool
+            // history from previous turns so Claude has context for multi-step chains.
+            appendLog(`[server] Project mode — tool definitions served by Claude Project.`);
+            const toolHistory = buildToolHistory(messages);
+            if (toolHistory) {
+                textPrompt = '--- Previous actions in this session ---\n'
+                    + toolHistory
+                    + '\n--- End of previous actions ---\n\n'
+                    + textPrompt;
+            }
+        } else {
+            // Non-project mode: upload tool definitions as file attachment with dedup
+            const toolsHash = crypto.createHash('md5')
+                .update(JSON.stringify(tools))
+                .digest('hex');
+            const isFirstToolUpload = (toolsHash !== sessionState.lastToolDefinitionsHash);
+
+            if (isFirstToolUpload) {
+                const toolFileContent = buildToolDefinitionsFile(tools);
+                const filename = `workspace_actions_${toolsHash.slice(0, 8)}.md`;
+                const filepath = path.join(TEMP_DIR, filename);
+                fs.writeFileSync(filepath, toolFileContent);
+                filesToUpload.push(filepath);
+                sessionState.lastToolDefinitionsHash = toolsHash;
+                appendLog(`[server] Tool definitions changed (hash: ${toolsHash.slice(0, 8)}), uploading as attachment.`);
+
+                const toolPrompt = buildToolCallingPrompt(tools, messages);
+                textPrompt = toolPrompt + textPrompt;
+            } else {
+                appendLog(`[server] Tool definitions unchanged, skipping re-upload.`);
+                const toolReminder = buildToolCallingReminder(tools, messages);
+                textPrompt = toolReminder + textPrompt;
+            }
+        }
     }
 
     appendLog(`[server] Processing prompt (${textPrompt.length} chars) with ${filesToUpload.length} attachments`);
@@ -274,10 +308,10 @@ app.post('/v1/chat/completions', async (req, res) => {
         const replyFingerprint = "fp_" + crypto.randomBytes(6).toString('hex');
         const replyCreated = Math.floor(Date.now() / 1000);
 
-        // When tools are present, buffer the full response (don't stream chunks)
-        // so we can parse <tool_call> blocks from the complete text.
-        // When no tools, stream normally as before.
-        const shouldStreamChunks = req.body.stream && !hasTools;
+        // Always stream text chunks for responsiveness, even when tools are
+        // present. After generation completes we inspect the full text for
+        // <tool_call> blocks and, if found, send the tool-call SSE events.
+        const shouldStreamChunks = !!req.body.stream;
 
         if (req.body.stream) {
             console.log("[server] Streaming response via SSE...");
@@ -335,11 +369,13 @@ app.post('/v1/chat/completions', async (req, res) => {
             if (toolCalls.length > 0) {
                 appendLog(`[server] Parsed ${toolCalls.length} tool call(s) from response.`);
                 const params = {
-                    toolCalls, textContent, replyId, replyCreated, replyFingerprint,
+                    toolCalls, textContent: null, replyId, replyCreated, replyFingerprint,
                     promptTokens, completionTokens,
                 };
 
                 if (req.body.stream) {
+                    // Text was already streamed in real-time above, so only
+                    // emit the tool_calls deltas and the finish event here.
                     const chunks = formatToolCallStreamChunks(params);
                     for (const chunk of chunks) {
                         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -348,6 +384,8 @@ app.post('/v1/chat/completions', async (req, res) => {
                     res.end();
                     appendLog(`\n=== [OUTGOING STREAM TOOL_CALLS RESPONSE SENT] ===\n`);
                 } else {
+                    // Non-streaming: include textContent in the response body
+                    params.textContent = textContent;
                     const response = formatToolCallResponse(params);
                     res.json(response);
                     appendLog(`\n=== [OUTGOING TOOL_CALLS RESPONSE] ===\n${JSON.stringify(response, null, 2)}\n===========================\n`);
@@ -366,18 +404,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         };
 
         if (req.body.stream) {
-            // If tools were present (buffered mode), send the text content now
-            if (hasTools) {
-                const textChunk = {
-                    id: replyId,
-                    object: "chat.completion.chunk",
-                    created: replyCreated,
-                    model: "claude-3-5-sonnet",
-                    system_fingerprint: replyFingerprint,
-                    choices: [{ index: 0, delta: { role: "assistant", content: responseText.trim() }, logprobs: null, finish_reason: null }]
-                };
-                res.write(`data: ${JSON.stringify(textChunk)}\n\n`);
-            }
             const finishChunk = {
                 id: replyId,
                 object: "chat.completion.chunk",
