@@ -17,6 +17,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow monitoring routes without authentication
+  // These don't need database - they just monitor the OpenAdapter server
+  const publicRoutes = ["/activities", "/logs", "/settings"];
+  if (publicRoutes.some(route => pathname.startsWith(route))) {
+    return NextResponse.next();
+  }
+
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,
