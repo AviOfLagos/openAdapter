@@ -6,8 +6,9 @@ const crypto = require('crypto');
 
 const { htmlToMarkdown } = require('./lib/htmlToMd');
 const { checkRateLimit, sendRateLimitResponse } = require('./lib/rateLimiter');
-const { state: sessionState, isPageAlive, recoverSession, getOrInitPage } = require('./lib/sessionManager');
+const { state: sessionState, isPageAlive, recoverSession, getOrInitPage, CLAUDE_PROJECT_URL } = require('./lib/sessionManager');
 const { createExtractPayload } = require('./lib/extractPayload');
+const { buildToolDefinitionsFile, buildToolCallingPrompt, buildToolCallingReminder, buildToolHistory, parseToolCalls, formatToolCallResponse, formatToolCallStreamChunks } = require('./lib/toolCallParser');
 
 const app = express();
 // Increase parsing limits for base64 images/files
@@ -182,7 +183,8 @@ app.post('/v1/chat/completions', async (req, res) => {
         return res.status(429).json({ error: { message: 'Adapter is busy with another request. Please wait.', type: 'rate_limit_error' } });
     }
 
-    const { messages } = req.body;
+    const { messages, tools } = req.body;
+    const hasTools = Array.isArray(tools) && tools.length > 0;
 
     if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: { message: 'Invalid request', type: 'invalid_request_error' } });
@@ -193,7 +195,49 @@ app.post('/v1/chat/completions', async (req, res) => {
         return res.status(400).json({ error: { message: 'Empty prompt', type: 'invalid_request_error' } });
     }
 
-    const { textPrompt, filesToUpload } = payload;
+    let { textPrompt, filesToUpload } = payload;
+
+    // Tool calling: when a Claude Project is configured, tool definitions live
+    // as persistent files in the project — no uploading or inline prefixes needed.
+    // Without a project, fall back to uploading tool definitions as a file attachment.
+    if (hasTools) {
+        if (CLAUDE_PROJECT_URL) {
+            // Project mode: files are already in the project. Only replay tool
+            // history from previous turns so Claude has context for multi-step chains.
+            appendLog(`[server] Project mode — tool definitions served by Claude Project.`);
+            const toolHistory = buildToolHistory(messages);
+            if (toolHistory) {
+                textPrompt = '--- Previous actions in this session ---\n'
+                    + toolHistory
+                    + '\n--- End of previous actions ---\n\n'
+                    + textPrompt;
+            }
+        } else {
+            // Non-project mode: upload tool definitions as file attachment with dedup
+            const toolsHash = crypto.createHash('md5')
+                .update(JSON.stringify(tools))
+                .digest('hex');
+            const isFirstToolUpload = (toolsHash !== sessionState.lastToolDefinitionsHash);
+
+            if (isFirstToolUpload) {
+                const toolFileContent = buildToolDefinitionsFile(tools);
+                const filename = `workspace_actions_${toolsHash.slice(0, 8)}.md`;
+                const filepath = path.join(TEMP_DIR, filename);
+                fs.writeFileSync(filepath, toolFileContent);
+                filesToUpload.push(filepath);
+                sessionState.lastToolDefinitionsHash = toolsHash;
+                appendLog(`[server] Tool definitions changed (hash: ${toolsHash.slice(0, 8)}), uploading as attachment.`);
+
+                const toolPrompt = buildToolCallingPrompt(tools, messages);
+                textPrompt = toolPrompt + textPrompt;
+            } else {
+                appendLog(`[server] Tool definitions unchanged, skipping re-upload.`);
+                const toolReminder = buildToolCallingReminder(tools, messages);
+                textPrompt = toolReminder + textPrompt;
+            }
+        }
+    }
+
     appendLog(`[server] Processing prompt (${textPrompt.length} chars) with ${filesToUpload.length} attachments`);
 
     isGenerating = true;
@@ -264,8 +308,13 @@ app.post('/v1/chat/completions', async (req, res) => {
         const replyFingerprint = "fp_" + crypto.randomBytes(6).toString('hex');
         const replyCreated = Math.floor(Date.now() / 1000);
 
+        // Always stream text chunks for responsiveness, even when tools are
+        // present. After generation completes we inspect the full text for
+        // <tool_call> blocks and, if found, send the tool-call SSE events.
+        const shouldStreamChunks = !!req.body.stream;
+
         if (req.body.stream) {
-            console.log("[server] Streaming response via SSE using real-time listener...");
+            console.log("[server] Streaming response via SSE...");
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
@@ -274,9 +323,9 @@ app.post('/v1/chat/completions', async (req, res) => {
         let fullGeneratedText = "";
 
         // Wait for completion and handle real-time chunking
-        console.log("[server] Waiting for response and streaming...");
+        console.log("[server] Waiting for response...");
         fullGeneratedText = await waitForCompletion(page, prevCount, (chunkText) => {
-            if (req.body.stream) {
+            if (shouldStreamChunks) {
                 const streamChunk = {
                     id: replyId,
                     object: "chat.completion.chunk",
@@ -298,7 +347,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         // ── Rate limit check ───────────────────────────────────────────────
         const rateLimitResult = await checkRateLimit(page, responseText);
         if (rateLimitResult) {
-            // Clean up temp files
             for (const file of filesToUpload) { try { fs.unlinkSync(file); } catch { } }
             sendRateLimitResponse(res, rateLimitResult.message, rateLimitResult.retryAfterMs);
             return;
@@ -311,14 +359,51 @@ app.post('/v1/chat/completions', async (req, res) => {
             try { fs.unlinkSync(file); } catch (e) { }
         }
 
+        const promptTokens = Math.max(1, Math.floor(textPrompt.length / 4));
+        const completionTokens = Math.max(1, Math.floor(responseText.length / 4));
+
+        // ── Check for tool calls in response ─────────────────────────────
+        if (hasTools) {
+            const { toolCalls, textContent } = parseToolCalls(responseText, tools);
+
+            if (toolCalls.length > 0) {
+                appendLog(`[server] Parsed ${toolCalls.length} tool call(s) from response.`);
+                const params = {
+                    toolCalls, textContent: null, replyId, replyCreated, replyFingerprint,
+                    promptTokens, completionTokens,
+                };
+
+                if (req.body.stream) {
+                    // Text was already streamed in real-time above, so only
+                    // emit the tool_calls deltas and the finish event here.
+                    const chunks = formatToolCallStreamChunks(params);
+                    for (const chunk of chunks) {
+                        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                    }
+                    res.write(`data: [DONE]\n\n`);
+                    res.end();
+                    appendLog(`\n=== [OUTGOING STREAM TOOL_CALLS RESPONSE SENT] ===\n`);
+                } else {
+                    // Non-streaming: include textContent in the response body
+                    params.textContent = textContent;
+                    const response = formatToolCallResponse(params);
+                    res.json(response);
+                    appendLog(`\n=== [OUTGOING TOOL_CALLS RESPONSE] ===\n${JSON.stringify(response, null, 2)}\n===========================\n`);
+                }
+                return;
+            }
+            // No tool calls found — fall through to normal text response
+            appendLog('[server] Tools were available but Claude responded with plain text.');
+        }
+
+        // ── Normal text response ─────────────────────────────────────────
         const baseTokenCount = {
-            prompt_tokens: Math.max(1, Math.floor(textPrompt.length / 4)),
-            completion_tokens: Math.max(1, Math.floor(responseText.length / 4)),
-            total_tokens: Math.max(2, Math.floor((textPrompt.length + responseText.length) / 4))
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
         };
 
         if (req.body.stream) {
-            // Send the finish chunk
             const finishChunk = {
                 id: replyId,
                 object: "chat.completion.chunk",
