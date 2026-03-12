@@ -1,48 +1,39 @@
-# OpenAdapter - Claude.ai to OpenAI API Bridge for OpenClaw
+# OpenAdapter
 
-> **Self-hosted OpenAI-compatible API for Claude.ai** using Playwright automation. Perfect for [OpenClaw](https://github.com/openclaw/openclaw), custom AI assistants, and any tool expecting OpenAI's API format.
+> **Self-hosted OpenAI-compatible API for Claude.ai** — no API key required.
 
-**🦞 Built with OpenClaw in mind** — Use Claude's intelligence without API costs!
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js 18+](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**No API key required** • **Free & Open Source** • **Streaming Support** • **File Uploads**
+OpenAdapter is a local server that bridges Claude's web interface into an **OpenAI-compatible REST API** using Playwright browser automation. It lets you use Claude with any tool that speaks the OpenAI chat completions format — [OpenClaw](https://github.com/openclaw/openclaw), [Continue.dev](https://continue.dev), custom scripts, IDE plugins, and more.
 
-A local server that bridges Claude's web interface (`claude.ai`) into an **OpenAI-compatible REST API**. Send requests to `http://127.0.0.1:3000/v1/chat/completions` and get responses back using your existing browser login session.
+**Free & Open Source** | **Streaming Support** | **File Uploads** | **Management Dashboard**
 
-Works with [OpenClaw](https://github.com/openclaw/openclaw), custom scripts, IDE plugins, and any tool that speaks the OpenAI chat completions format.
+---
 
-## 🦞 OpenClaw Integration
+## Project Status
 
-**Perfect for [OpenClaw](https://github.com/openclaw/openclaw) users!** Use Claude's intelligence with all your OpenClaw skills and automations - no API costs required.
+OpenAdapter is in active development. The core adapter server is **stable and functional**. A Next.js management dashboard is in progress.
 
-### Quick Setup for OpenClaw
+| Component | Status | Location |
+|-----------|--------|----------|
+| **Adapter Server** | Stable — 61 unit tests passing | `apps/server/` |
+| **CLI Tool** | Stable | `apps/server/src/adapter.js` |
+| **Management API** | Stable — 8 admin endpoints | `apps/server/src/lib/managementController.js` |
+| **Dashboard UI** | In progress — builds, monitoring tabs work, chat not yet wired to adapter | `apps/dashboard/` |
+| **Tool Calling** | Designed, implementation in progress | [feature/tool-calling branch](https://github.com/AviOfLagos/openAdapter/tree/feature/tool-calling) |
 
-```yaml
-# In your OpenClaw config:
-llm:
-  provider: openai
-  api_base: "http://127.0.0.1:3000/v1"
-  api_key: "dummy-key-not-used"
-  model: "claude-sonnet-4.5"
-  streaming: true
-```
+See the [Roadmap](docs/ROADMAP.md) for what's planned and where help is needed.
 
-**📖 [Complete OpenClaw Integration Guide](docs/OPENCLAW_INTEGRATION.md)**
-
-### Works With Any OpenAI-Compatible Tool
-
-- **[OpenClaw](https://github.com/openclaw/openclaw)** - Personal AI assistant with 100+ skills
-- **[Continue.dev](https://continue.dev)** - AI code assistant for VS Code
-- **Custom scripts** - Python, JavaScript, shell scripts
-- **IDE plugins** - Cursor and other OpenAI-compatible tools
-
-*Using OpenAdapter in your project? [Open a PR](https://github.com/AviOfLagos/openAdapter/pulls) to add it here!*
+---
 
 ## How It Works
 
 ```
 Your App / Client                  OpenAdapter                    claude.ai
 ─────────────────       ───────────────────────────────       ───────────────
-                           Express server (:3000)
+                           Express server (:3001)
   POST /v1/chat/    ──>   Receives OpenAI-format req    ──>   Types prompt
   completions              Manages Playwright browser          into chat UI
                            Polls DOM for response
@@ -52,93 +43,65 @@ Your App / Client                  OpenAdapter                    claude.ai
 
 1. Launches Chromium with a persistent profile (session stays logged in across restarts)
 2. Receives OpenAI-format chat completion requests over HTTP
-3. Extracts the user prompt and any file attachments (images, documents)
-4. Types the prompt into Claude's web UI and submits it
-5. Polls the DOM for the response, streaming chunks via SSE if requested
-6. Converts Claude's HTML response to clean Markdown
-7. Returns an OpenAI-compatible response (or SSE stream)
+3. Types the prompt into Claude's web UI and submits it
+4. Polls the DOM for the response, streaming chunks via SSE if requested
+5. Converts Claude's HTML response to clean Markdown
+6. Returns an OpenAI-compatible response
 
 ## Requirements
 
-- Node.js v18+
-- npm
-- A graphical desktop (the browser runs headful — no headless mode due to Cloudflare)
+- **Node.js v18+** and **pnpm** (monorepo uses pnpm workspaces)
+- A graphical desktop (the browser runs headful — Cloudflare blocks headless)
 
-## Setup
-
-### macOS
+## Quick Start
 
 ```bash
-git clone <repo-url> open-adapter
-cd open-adapter
-npm install
-npx playwright install chromium
+# Clone and install
+git clone https://github.com/AviOfLagos/openAdapter.git
+cd openAdapter
+pnpm install
+
+# Install Playwright's bundled Chromium
+cd apps/server && npx playwright install chromium && cd ../..
+# On Linux, also run: npx playwright install-deps chromium
+
+# Start both server and dashboard
+pnpm dev
 ```
 
-> Playwright downloads its own bundled Chromium — you don't need Chrome installed.
+On first run, a Chromium window opens to `claude.ai` — log in manually once. Your session persists in `.browser-profile/`.
 
-### Windows
+- **Server:** http://127.0.0.1:3001
+- **Dashboard:** http://localhost:3000
 
-```powershell
-git clone <repo-url> open-adapter
-cd open-adapter
-npm install
-npx playwright install chromium
-```
-
-> Use PowerShell or Windows Terminal. Command Prompt (`cmd`) works too but PowerShell is recommended.
-
-### Linux
+### Server Only
 
 ```bash
-git clone <repo-url> open-adapter
-cd open-adapter
-npm install
-npx playwright install chromium
-# Playwright may prompt you to install system dependencies:
-npx playwright install-deps chromium
+pnpm dev:server     # Start adapter server only (port 3001)
 ```
 
-> On Linux, Playwright needs certain system libraries (libnss3, libatk-bridge, etc.). The `install-deps` command installs them automatically (requires sudo).
-
-## First Run (Login)
-
-On the first run, the browser opens to `claude.ai`. You must log in manually once:
+### Test It
 
 ```bash
-node server.js
+curl http://127.0.0.1:3001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "What is 2+2?"}]}'
 ```
-
-1. The browser opens to `claude.ai`
-2. Log in with your credentials
-3. Your session is saved in `.browser-profile/` and persists across restarts
-4. The server is now ready at `http://127.0.0.1:3000`
 
 ## Usage
 
-### Start the server
+### Non-streaming
 
 ```bash
-npm start        # Runs unit tests first, then starts the server (recommended)
-npm run dev      # Starts the server directly, skipping tests
-```
-
-The server listens on `http://127.0.0.1:3000`.
-
-### Send a request (non-streaming)
-
-```bash
-curl http://127.0.0.1:3000/v1/chat/completions \
+curl http://127.0.0.1:3001/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "What is 2+2?"}]
-  }'
+  -d '{"messages": [{"role": "user", "content": "What is 2+2?"}]}'
 ```
 
-### Send a request (streaming)
+### Streaming (SSE)
 
 ```bash
-curl http://127.0.0.1:3000/v1/chat/completions \
+curl http://127.0.0.1:3001/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [{"role": "user", "content": "Explain recursion"}],
@@ -146,12 +109,10 @@ curl http://127.0.0.1:3000/v1/chat/completions \
   }'
 ```
 
-### Send images or files (base64)
-
-The adapter supports OpenAI's multimodal message format:
+### Images / Files (base64)
 
 ```bash
-curl http://127.0.0.1:3000/v1/chat/completions \
+curl http://127.0.0.1:3001/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [{
@@ -164,181 +125,88 @@ curl http://127.0.0.1:3000/v1/chat/completions \
   }'
 ```
 
-### CLI adapter (standalone)
-
-The original CLI tool is also available for one-off queries without running the server:
+### CLI Tool
 
 ```bash
-node adapter.js "What is 2+2?"
+node apps/server/src/adapter.js "What is 2+2?"
 ```
 
-Output goes to stdout. Status messages go to stderr, so you can pipe cleanly:
+### OpenClaw Integration
+
+```yaml
+# In your OpenClaw config:
+llm:
+  provider: openai
+  api_base: "http://127.0.0.1:3001/v1"
+  api_key: "dummy-key-not-used"
+  model: "claude-sonnet-4.5"
+  streaming: true
+```
+
+Works with any OpenAI-compatible tool: [OpenClaw](https://github.com/openclaw/openclaw), [Continue.dev](https://continue.dev), Cursor, custom scripts, etc.
+
+## Management API
+
+Monitor and control the server remotely:
 
 ```bash
-node adapter.js "List 5 prime numbers" | grep -i prime
+curl http://127.0.0.1:3001/admin/health        # Health + statistics
+curl http://127.0.0.1:3001/admin/status         # Simple status check
+curl -X POST http://127.0.0.1:3001/admin/session/restart  # Restart browser
+curl http://127.0.0.1:3001/admin/logs?lines=50  # Recent logs
 ```
 
-## Remote Management API
-
-OpenAdapter includes a comprehensive remote management API for monitoring and controlling the server:
-
-### Quick Examples
-
-```bash
-# Check server health
-curl http://127.0.0.1:3000/admin/health
-
-# Restart browser session
-curl -X POST http://127.0.0.1:3000/admin/session/restart
-
-# View recent logs
-curl http://127.0.0.1:3000/admin/logs?lines=50
-```
-
-### Available Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/admin/health` | GET | Comprehensive health & statistics |
-| `/admin/status` | GET | Simple status check (healthy/degraded) |
-| `/admin/session/restart` | POST | Force browser restart |
-| `/admin/session/recover` | POST | Trigger multi-tier session recovery |
-| `/admin/session/new-chat` | POST | Start new conversation |
-| `/admin/logs` | GET | Retrieve recent logs |
-| `/admin/logs` | DELETE | Clear log file |
-| `/admin/config` | GET | View configuration |
-
-### Security (Optional)
-
-Enable API key authentication for remote access:
-
-```bash
-# Generate secure key
-export ADMIN_API_KEY="$(openssl rand -hex 32)"
-
-# Start server with authentication
-npm start
-
-# Use with requests
-curl -H "Authorization: Bearer your-key-here" \
-  http://127.0.0.1:3000/admin/health
-```
-
-**📖 [Complete Remote Management Guide](REMOTE_MANAGEMENT.md)**
+Optional API key auth: set `ADMIN_API_KEY` environment variable. See [REMOTE_MANAGEMENT.md](REMOTE_MANAGEMENT.md) for all 8 endpoints.
 
 ## Project Structure
 
 ```
-open-adapter/
-├── server.js               # Express API server (OpenAI-compatible endpoint)
-├── adapter.js              # Standalone CLI tool (single-prompt, exits after)
-├── lib/
-│   ├── sessionManager.js   # Browser lifecycle & multi-tier session recovery
-│   ├── extractPayload.js   # OpenAI message parser & file attachment handler
-│   ├── htmlToMd.js         # HTML-to-Markdown converter (runs in-browser)
-│   └── rateLimiter.js      # Detects Claude rate limits from DOM & response text
-├── tests/
-│   ├── unit/               # Unit tests (extractPayload, htmlToMd, rateLimiter)
-│   └── integration/        # Integration tests (HTTP endpoint validation)
-├── .browser-profile/       # Persistent Chromium session (created on first run)
-├── temp_uploads/           # Temporary directory for file attachments
-├── logs.txt                # Request/response logs (created at runtime)
-├── package.json
-└── README.md
+openAdapter/
+├── apps/
+│   ├── server/                  # Express adapter server (port 3001)
+│   │   ├── src/
+│   │   │   ├── server.js        # Main server + OpenAI endpoint
+│   │   │   ├── adapter.js       # Standalone CLI tool
+│   │   │   └── lib/
+│   │   │       ├── sessionManager.js       # Browser lifecycle + recovery
+│   │   │       ├── extractPayload.js       # OpenAI message parser
+│   │   │       ├── htmlToMd.js             # HTML→Markdown (runs in-browser)
+│   │   │       ├── rateLimiter.js          # Rate limit detection
+│   │   │       └── managementController.js # Admin API endpoints
+│   │   └── tests/
+│   │       ├── unit/            # 61 unit tests
+│   │       └── integration/     # HTTP endpoint tests
+│   │
+│   └── dashboard/               # Next.js management UI (port 3000)
+│       ├── app/                 # Routes (chat, activities, logs, settings)
+│       ├── components/          # React components + shadcn/ui
+│       └── lib/                 # API client, utilities
+│
+├── packages/                    # Shared packages (planned)
+├── turbo.json                   # Turborepo config
+├── pnpm-workspace.yaml          # Workspace definition
+└── docs/                        # Roadmap, strategy, backlog
 ```
-
-## Architecture
-
-### server.js — API Server
-
-The main entry point. An Express server that:
-
-- Accepts `POST /v1/chat/completions` in OpenAI chat format
-- Supports both regular JSON responses and SSE streaming (`"stream": true`)
-- Handles multimodal content: text, base64 images (`image_url`), and file attachments (`file_url`)
-- Deduplicates system context across requests (hashes system messages, only re-uploads when changed)
-- Converts large prompts (>15k chars) to file attachments automatically
-- Logs all requests and responses to `logs.txt`
-- Returns OpenAI-shaped responses with estimated token counts
-
-### lib/sessionManager.js — Browser Lifecycle
-
-Manages the Playwright browser with multi-tier recovery:
-
-| Level | Strategy | Description |
-|-------|----------|-------------|
-| L0 | `isPageAlive()` | Quick JS eval liveness probe |
-| L1 | `reloadPage()` | Reload the current page |
-| L2 | `newChat()` | Navigate to `claude.ai/new` (fresh conversation) |
-| L3 | `restartBrowser()` | Close browser context + relaunch Playwright |
-| L4 | Fatal | Return null, server responds with 503 |
-
-Sessions auto-timeout after 1 hour of inactivity, starting a fresh conversation.
-
-### lib/htmlToMd.js — HTML to Markdown
-
-A self-contained DOM-to-Markdown converter that runs inside the browser via `page.evaluate()`. Handles headings, bold/italic, code blocks (with language detection), tables, lists, checkboxes, links, images, blockquotes, and horizontal rules.
-
-### lib/rateLimiter.js — Rate Limit Detection
-
-Detects Claude's rate limiting by:
-1. Scanning the DOM for error/alert elements
-2. Pattern-matching the response text against known rate-limit phrases
-3. Parsing retry-after durations from the message
-
-Returns OpenAI-format `429` responses with `Retry-After` headers.
-
-### adapter.js — CLI Tool
-
-The original proof-of-concept. A standalone script that launches its own browser, sends a single prompt, captures the response, and exits. Useful for quick scripting without running the server.
-
-## Configuration
-
-### Server (server.js)
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | Server listen port |
-| `MAX_TIMEOUT_MS` | `180000` (3 min) | Hard timeout waiting for Claude's response |
-| `STABLE_INTERVAL_MS` | `30000` (30 sec) | Content-unchanged = done threshold |
-| `POLL_MS` | `500` | DOM polling interval |
-| `SESSION_TIMEOUT_MS` | `3600000` (1 hr) | Inactivity before starting a new conversation |
-
-### CLI (adapter.js)
-
-| Variable | Default | Description |
-|---|---|---|
-| `CLAUDE_URL` | `https://claude.ai/new` | Starting URL |
-| `USER_DATA_DIR` | `.browser-profile/` | Persistent browser session directory |
-| `MAX_TIMEOUT_MS` | `120000` (2 min) | Hard timeout for response |
-| `STABLE_INTERVAL_MS` | `3000` (3 sec) | Content-unchanged = done threshold |
-| `POLL_MS` | `500` | Polling interval |
-
-## Selectors
-
-Both the server and CLI use fallback selector chains to find UI elements. If Claude updates their UI, edit `SELECTOR_CHAINS`:
-
-```
-promptInput:    div[contenteditable="true"] → div[role="textbox"] → ...
-sendButton:     button[aria-label*="Send"] → button[data-testid="send-button"]
-stopButton:     button[aria-label*="Stop"] → button[data-testid="stop-button"]
-responseBlocks: div[data-testid*="message"] → div.font-claude-response → ...
-fileInput:      input[type="file"]
-```
-
-To inspect current selectors, open `claude.ai` in Chrome DevTools (F12) and inspect the elements.
 
 ## Testing
 
 ```bash
-npm test              # Run all tests (unit + integration)
-npm run test:unit     # Unit tests only (no server needed)
-npm run test:integration  # Integration tests (requires running server)
+pnpm test:unit          # Unit tests (no server needed) — fast
+pnpm test               # All tests
+pnpm dev:server         # Then in another terminal:
+pnpm test:integration   # Integration tests against live server
 ```
 
-Unit tests cover the core modules (`extractPayload`, `htmlToMd`, `rateLimiter`) and run automatically before the server starts when using `npm start`.
+## Configuration
 
-Integration tests validate the HTTP endpoint (request validation, CORS, response shape) against a live server.
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3001` | Server listen port |
+| `MAX_TIMEOUT_MS` | `180000` (3 min) | Hard timeout for Claude's response |
+| `STABLE_INTERVAL_MS` | `30000` (30 sec) | Content-unchanged = done threshold |
+| `POLL_MS` | `500` | DOM polling interval |
+| `SESSION_TIMEOUT_MS` | `3600000` (1 hr) | Inactivity before new conversation |
+| `ADMIN_API_KEY` | none | Optional API key for management endpoints |
 
 ## Limitations
 
@@ -346,7 +214,6 @@ Integration tests validate the HTTP endpoint (request validation, CORS, response
 - **Single request at a time** — concurrent requests return 429 (busy)
 - **No login automation** — you log in manually once; session persists in `.browser-profile/`
 - **Selectors may break** — Claude UI updates can change the DOM structure
-- **No conversation memory** — each server session timeout starts a fresh chat
 - **Token counts are estimates** — calculated from character length, not actual tokenization
 
 ## Troubleshooting
@@ -357,34 +224,37 @@ Integration tests validate the HTTP endpoint (request validation, CORS, response
 | Cloudflare challenge page | Must run headful (default). Don't set `headless: true` |
 | Login not persisting | Ensure `.browser-profile/` exists and isn't being deleted |
 | Timeout with no response | Increase `MAX_TIMEOUT_MS` or check if Claude is down |
-| Browser doesn't open | Run `npx playwright install chromium` |
-| 503 session recovery failed | All recovery tiers failed. Restart `node server.js` |
-| 429 rate limit | Claude's free/pro message limit hit. Wait for the retry-after period |
-| **Linux:** missing shared libraries | Run `npx playwright install-deps chromium` to install system dependencies |
-| **Linux:** no display / `DISPLAY not set` | You need a graphical desktop. For headless servers, use Xvfb: `xvfb-run node server.js` |
-| **Windows:** `npx` not recognized | Ensure Node.js is in your PATH. Reinstall Node.js using the official installer and check "Add to PATH" |
-| **macOS:** Chromium blocked by Gatekeeper | Go to System Settings > Privacy & Security and click "Allow Anyway" for the Chromium binary |
+| Browser doesn't open | Run `npx playwright install chromium` in `apps/server/` |
+| 503 session recovery failed | All recovery tiers failed. Restart the server |
+| 429 rate limit | Claude's message limit hit. Wait for the retry-after period |
+| Dashboard can't connect | Check server is running on port 3001 |
+| **Linux:** missing shared libraries | Run `npx playwright install-deps chromium` |
+| **Linux:** no display | You need a graphical desktop. For headless servers: `xvfb-run node server.js` |
 
 ## Contributing
 
-We welcome contributions! OpenAdapter is built with the OpenClaw community in mind. 🦞
+We welcome contributions! OpenAdapter is an open project and we want to make it easy for anyone to help improve it.
 
-### Good First Issues
-Check out issues labeled [`good first issue`](https://github.com/AviOfLagos/openAdapter/labels/good%20first%20issue) - these are perfect for newcomers!
+### Where to Start
 
-### Priority Features
-- **🎯 Tool Calling Support (v1.2)** - #1 requested feature for OpenClaw integration
-- Docker support
-- Better streaming (MutationObserver)
-- Configuration file
+1. Check [Issues](https://github.com/AviOfLagos/openAdapter/issues) for open tasks
+2. Look for [`good first issue`](https://github.com/AviOfLagos/openAdapter/labels/good%20first%20issue) labels
+3. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide
+4. See the [Roadmap](docs/ROADMAP.md) for the big picture
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide and [roadmap](docs/roadmap-milestones.md) for planned features.
+### High-Impact Areas
+
+- **Tool calling support** — the biggest gap; needed for OpenClaw skills, subagents, and MCP
+- **Dashboard chat integration** — wire the dashboard's chat tab to OpenAdapter instead of Vercel AI Gateway
+- **Selector updates** — keep selectors current when Claude changes their UI
+- **Better streaming** — replace DOM polling with MutationObserver
+- **Docker support** — containerize with Xvfb for headless server environments
 
 ### Community
-- 💬 [Discussions](https://github.com/AviOfLagos/openAdapter/discussions) - Ask questions, share workflows
-- 🐛 [Issues](https://github.com/AviOfLagos/openAdapter/issues) - Bug reports and feature requests
-- 🦞 [OpenClaw Integration](https://github.com/AviOfLagos/openAdapter/discussions/categories/openclaw-integration) - OpenClaw-specific help
+
+- [Discussions](https://github.com/AviOfLagos/openAdapter/discussions) — questions, ideas, workflows
+- [Issues](https://github.com/AviOfLagos/openAdapter/issues) — bugs and feature requests
 
 ## License
 
-ISC
+[MIT](LICENSE)

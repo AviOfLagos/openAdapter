@@ -30,7 +30,6 @@ apps/server/logs.txt
 .DS_Store
 *.log
 
-# Docs (generated)
-docs/
+# Note: docs/ is tracked — contains roadmap, strategy, and backlog
 
 # Note: .github/ directory IS tracked (contains workflows and templates)
