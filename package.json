@@ -2,7 +2,16 @@
   "name": "openadapter-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "OpenAdapter monorepo - Claude.ai to OpenAI API Bridge with AI-powered dashboard",
+  "license": "MIT",
+  "description": "Self-hosted OpenAI-compatible API bridge for Claude.ai via Playwright, with a Next.js management dashboard.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AviOfLagos/openAdapter.git"
+  },
+  "homepage": "https://github.com/AviOfLagos/openAdapter",
+  "bugs": {
+    "url": "https://github.com/AviOfLagos/openAdapter/issues"
+  },
   "scripts": {
     "dev": "turbo run dev --parallel",
     "dev:server": "turbo run dev --filter=@openadapter/server",

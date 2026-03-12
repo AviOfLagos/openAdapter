@@ -4,84 +4,94 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-OpenAdapter is a local Express server that bridges claude.ai's web interface into an OpenAI-compatible API using Playwright. It launches a headful Chromium browser, automates the Claude web UI via DOM manipulation, and exposes `POST /v1/chat/completions` at `http://127.0.0.1:3000`. There is also a standalone CLI tool (`adapter.js`) for one-off prompts.
+OpenAdapter is a monorepo containing two apps:
+
+1. **Adapter Server** (`apps/server/`) — A local Express server that bridges claude.ai's web interface into an OpenAI-compatible API using Playwright. It launches a headful Chromium browser, automates the Claude web UI via DOM manipulation, and exposes `POST /v1/chat/completions` at `http://127.0.0.1:3001`. Includes a standalone CLI tool (`adapter.js`) and a remote management API (8 admin endpoints).
+
+2. **Dashboard** (`apps/dashboard/`) — A Next.js 16 management interface with 4 tabs: Chat, Activities, Logs, Settings. The monitoring tabs connect to the adapter server's management API. The chat tab currently uses Vercel AI Gateway (not yet wired to OpenAdapter).
+
+## Monorepo Setup
+
+- **Package manager:** pnpm with workspaces
+- **Build tool:** Turborepo
+- **Workspace config:** `pnpm-workspace.yaml` (apps/*, packages/*)
 
 ## Commands
 
 ```bash
 # Setup
-npm install                        # Install dependencies
-npx playwright install chromium    # Install Playwright's bundled Chromium
+pnpm install                       # Install all dependencies
+cd apps/server && npx playwright install chromium  # Install browser
 
-# Running the server
-npm start                          # Run unit tests first, then start server (recommended)
-npm run dev                        # Start server directly, skipping tests
-node server.js                     # Alternative to npm run dev
+# Running (from monorepo root)
+pnpm dev                           # Start both server (:3001) and dashboard (:3000)
+pnpm dev:server                    # Server only
+pnpm dev:dashboard                 # Dashboard only
 
-# Testing (uses Node's built-in test runner)
-npm test                           # Run all tests (unit + integration)
-npm run test:unit                  # Unit tests only (no server needed)
-npm run test:integration           # Integration tests (requires running server)
+# Testing
+pnpm test                          # Run all tests via Turborepo
+pnpm test:unit                     # Unit tests only (no server needed)
+pnpm test:integration              # Integration tests (requires running server)
 
-# CLI tool
-node adapter.js "your prompt"      # Single prompt, exits after response
+# Building
+pnpm build                         # Build all apps
 
-# Remote management (optional API key auth via ADMIN_API_KEY env var)
-curl http://127.0.0.1:3000/admin/health           # Health check
-curl -X POST http://127.0.0.1:3000/admin/session/restart  # Restart browser
+# From apps/server/ directly
+npm start                          # Run unit tests then start server
+npm run dev                        # Start server directly
+npm run test:unit                  # Server unit tests
+node src/adapter.js "your prompt"  # CLI tool
+
+# Remote management
+curl http://127.0.0.1:3001/admin/health           # Health check
+curl -X POST http://127.0.0.1:3001/admin/session/restart  # Restart browser
 ```
 
-No linter is configured.
+No linter is configured for the server. The dashboard uses Next.js's built-in linting.
 
 ## Architecture
 
+### Server (`apps/server/`)
+
 **Request flow:** Client sends OpenAI-format POST → `server.js` extracts prompt/files via `extractPayload()` → gets or recovers a Playwright page via `sessionManager.getOrInitPage()` → types prompt into Claude's contenteditable input → polls DOM for response via `waitForCompletion()` → converts HTML to Markdown via `htmlToMd.htmlToMarkdown()` (runs in-browser via `page.evaluate()`) → checks for rate limits via `rateLimiter.checkRateLimit()` → returns OpenAI-shaped JSON or SSE stream.
 
-**Key modules:**
-- `server.js` — Express server, chat completions endpoint + management API, handles streaming/non-streaming, file uploads (base64 → temp file → Playwright file input), system context deduplication (MD5 hash), large prompt conversion to file attachments (>15k chars)
-- `adapter.js` — Standalone CLI tool with its own browser lifecycle. Duplicates selector chains and DOM helpers from server.js (not shared)
-- `lib/sessionManager.js` — Browser lifecycle with multi-tier recovery (L0: JS eval probe → L1: reload → L2: navigate to /new → L3: full browser restart → L4: fatal/503). Exports shared mutable `state` object
-- `lib/htmlToMd.js` — Self-contained DOM→Markdown converter. **Must remain free of Node.js globals** because it's serialized and executed inside the browser via `page.evaluate()`
-- `lib/rateLimiter.js` — Regex-based rate limit detection from DOM elements and response text, returns OpenAI-format 429 responses
-- `lib/managementController.js` — Remote management API (health checks, session control, log access, stats tracking). Optional authentication via `ADMIN_API_KEY` environment variable
+**Key modules (all in `apps/server/src/`):**
+- `server.js` — Express server, chat completions endpoint + management API, handles streaming/non-streaming, file uploads, system context deduplication
+- `adapter.js` — Standalone CLI tool with its own browser lifecycle
+- `lib/sessionManager.js` — Browser lifecycle with multi-tier recovery (L0-L4)
+- `lib/htmlToMd.js` — DOM-to-Markdown converter. **Must remain free of Node.js globals** (runs in-browser via `page.evaluate()`)
+- `lib/rateLimiter.js` — Rate limit detection from DOM and response text
+- `lib/extractPayload.js` — OpenAI message parser and file handler
+- `lib/managementController.js` — Remote management API (health, session control, logs, config)
 
-**Selector chains:** Both `server.js` and `adapter.js` define `SELECTOR_CHAINS` objects with fallback CSS selectors for Claude's UI elements (promptInput, sendButton, stopButton, responseBlocks, fileInput). These break when Claude updates their DOM and need manual inspection to fix.
+**Tests (in `apps/server/tests/`):**
+- Unit tests: `extractPayload`, `htmlToMd`, `rateLimiter`, `toolCallParser` — 61 tests, no server needed
+- Integration tests: HTTP endpoint validation against a live server
 
-**Concurrency:** The server handles one request at a time (`isGenerating` flag). Concurrent requests get 429.
+### Dashboard (`apps/dashboard/`)
 
-**Browser profile:** `.browser-profile/` stores persistent Chromium session data so the user only logs in once. This directory is gitignored.
+**Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Vercel AI SDK v6
 
-**Configuration values** (hardcoded in source files):
-- `PORT`: 3000 (server listen port)
-- `MAX_TIMEOUT_MS`: 180000ms (3 min) in server.js, 120000ms (2 min) in adapter.js — hard timeout waiting for Claude's response
-- `STABLE_INTERVAL_MS`: 30000ms (30 sec) in server.js, 3000ms (3 sec) in adapter.js — content-unchanged threshold to consider response complete
-- `POLL_MS`: 500ms — DOM polling interval
-- `SESSION_TIMEOUT_MS`: 3600000ms (1 hr) — inactivity before starting a new conversation
-- Large prompt threshold: 15000 chars — prompts exceeding this are converted to file attachments
+**Key files:**
+- `lib/openadapter-client.ts` — Type-safe API client for the adapter server
+- `components/dashboard-tabs.tsx` — Tab navigation
+- `components/server-health-monitor.tsx` — Real-time health metrics
+- `components/logs-viewer.tsx` — Log viewer with search/filter
+- `components/server-settings.tsx` — Session controls
 
 ## Important Constraints
 
 - The browser **must run headful** (Cloudflare blocks headless Chromium)
-- `htmlToMd.js`'s `htmlToMarkdown` function runs inside the browser — no `require()`, no Node APIs
-- System context is deduplicated across requests using MD5 hashing stored in `sessionState.lastSystemContextHash`
-- HTTP server timeouts are set to 10 minutes (600s) to support long Claude generations
-- Token counts in responses are estimates (char length / 4), not real tokenization
-
-## Testing
-
-The project uses Node's built-in test runner (`node:test`). Tests are in `tests/`:
-- **Unit tests** (`tests/unit/`): Test `extractPayload`, `htmlToMd`, and `rateLimiter` modules in isolation. No server needed.
-- **Integration tests** (`tests/integration/`): Validate the HTTP endpoint against a live server. Requires the server to be running.
-
-`npm start` runs unit tests before starting the server. Unit tests are fast and catch regressions in core modules.
+- `htmlToMd.js` runs inside the browser — no `require()`, no Node APIs
+- System context is deduplicated via MD5 hash in `sessionState.lastSystemContextHash`
+- Server port is **3001** (dashboard uses 3000)
+- Token counts in responses are estimates (char length / 4)
+- Server code is CommonJS (`require`/`module.exports`); dashboard is TypeScript/ESM
 
 ## Coding Standards
 
-When modifying code, follow these conventions:
-
-- **Logging**: Use `appendLog()` in server code (writes to both console and `logs.txt`). Prefix log lines with `[moduleName]` for traceability (e.g., `[server]`, `[sessionManager]`)
-- **Async**: Use `async/await` over raw promises
-- **Variables**: Use `const`/`let`, never `var`
-- **Selectors**: Add new selectors to `SELECTOR_CHAINS` objects rather than hardcoding them inline. Update both `server.js` and `adapter.js` if both need the same selector
-- **Error responses**: Return OpenAI-shaped error objects with appropriate HTTP status codes (see `CONTRIBUTING.md` for format)
-- **Functions**: Keep functions focused. If adding significant logic, put it in a new file under `lib/`
+- **Server:** CommonJS, `const`/`let` (no `var`), `async/await`, `appendLog()` for logging with `[moduleName]` prefixes
+- **Dashboard:** TypeScript, React Server Components, shadcn/ui conventions
+- **Selectors:** Always in `SELECTOR_CHAINS` objects, never hardcoded inline
+- **Error responses:** OpenAI-shaped error objects with appropriate HTTP status codes
+- **New logic:** Put in a new file under `lib/`, keep functions focused

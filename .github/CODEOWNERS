@@ -1,0 +1,14 @@
+# Default owners for everything
+* @AviOfLagos
+
+# Server core
+apps/server/src/server.js @AviOfLagos
+apps/server/src/lib/ @AviOfLagos
+
+# Dashboard
+apps/dashboard/ @AviOfLagos
+
+# CI and project config
+.github/ @AviOfLagos
+turbo.json @AviOfLagos
+pnpm-workspace.yaml @AviOfLagos
